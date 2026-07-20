@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f9fb;
+  --foreground: #14181f;
+  --surface: #ffffff;
+  --surface-muted: #f1f3f7;
+  --border: #e4e7ec;
+  --primary: #5b5bd6;
+  --primary-foreground: #ffffff;
+  --income: #16a34a;
+  --expense: #e34c4c;
+  --muted-foreground: #6b7280;
+
+  /* dataviz tokens (see dataviz skill palette.md) */
+  --chart-surface: #fcfcfb;
+  --chart-series-1: #2a78d6; /* blue - sequential/magnitude default */
+  --chart-series-1-soft: #cde2fb;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #898781;
+  --chart-other: #c3c2b7;
+
+  /* categorical slots (fixed order, see dataviz skill) */
+  --series-1: #2a78d6; /* blue */
+  --series-2: #008300; /* green */
+  --series-3: #e87ba4; /* magenta */
+  --series-4: #eda100; /* yellow */
+  --series-5: #1baf7a; /* aqua */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --color-muted-foreground: var(--muted-foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0f1a;
+    --foreground: #e7e9ee;
+    --surface: #131826;
+    --surface-muted: #1a2032;
+    --border: #232a3d;
+    --primary: #8b8bf0;
+    --primary-foreground: #0b0f1a;
+    --income: #4ade80;
+    --expense: #f87171;
+    --muted-foreground: #9099ab;
+
+    --chart-surface: #1a1a19;
+    --chart-series-1: #3987e5;
+    --chart-series-1-soft: #184f95;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #898781;
+    --chart-other: #383835;
+
+    --series-1: #3987e5;
+    --series-2: #008300;
+    --series-3: #d55181;
+    --series-4: #c98500;
+    --series-5: #199e70;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
+
+/* Remove o incremento nativo em inputs numéricos para um visual mais limpo */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
