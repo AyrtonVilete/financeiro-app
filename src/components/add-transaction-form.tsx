@@ -31,6 +31,8 @@ export function AddTransactionForm({
   const [mode, setMode] = useState<"quick" | "detailed">("quick");
   const [items, setItems] = useState<ItemRow[]>([{ ...emptyRow }]);
   const [isShared, setIsShared] = useState(false);
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [installments, setInstallments] = useState("2");
 
   const filteredCategories = categories.filter((c) => c.kind === kind);
 
@@ -66,6 +68,9 @@ export function AddTransactionForm({
       <input type="hidden" name="kind" value={kind} />
       {mode === "detailed" && <input type="hidden" name="items" value={JSON.stringify(itemsPayload)} readOnly />}
       {household && <input type="hidden" name="householdId" value={household.id} />}
+      {kind === "expense" && mode === "quick" && isInstallment && (
+        <input type="hidden" name="installments" value={installments} />
+      )}
 
       {/* Tipo: gasto ou receita */}
       <div className="flex rounded-xl bg-surface-muted p-1">
@@ -73,7 +78,10 @@ export function AddTransactionForm({
           <button
             key={k}
             type="button"
-            onClick={() => setKind(k)}
+            onClick={() => {
+              setKind(k);
+              if (k === "income") setIsInstallment(false);
+            }}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
               kind === k ? "bg-surface shadow-sm" : "text-muted-foreground"
             }`}
@@ -90,7 +98,10 @@ export function AddTransactionForm({
             <button
               key={m}
               type="button"
-              onClick={() => setMode(m)}
+              onClick={() => {
+                setMode(m);
+                if (m === "detailed") setIsInstallment(false);
+              }}
               className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
                 mode === m ? "bg-surface shadow-sm" : "text-muted-foreground"
               }`}
@@ -104,7 +115,7 @@ export function AddTransactionForm({
       {mode === "quick" || kind === "income" ? (
         <div className="flex flex-col gap-1.5">
           <label htmlFor="amount" className="text-sm font-medium">
-            Valor
+            {isInstallment ? "Valor da parcela" : "Valor"}
           </label>
           <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3">
             <span className="text-muted-foreground">R$</span>
@@ -120,6 +131,38 @@ export function AddTransactionForm({
               className="w-full bg-transparent text-lg outline-none"
             />
           </div>
+
+          {kind === "expense" && (
+            <div className="mt-2 flex flex-col gap-2 rounded-xl border border-border bg-surface p-3">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={isInstallment}
+                  onChange={(e) => setIsInstallment(e.target.checked)}
+                  className="h-5 w-5 accent-[var(--primary)]"
+                />
+                <span className="text-sm">Compra parcelada</span>
+              </label>
+
+              {isInstallment && (
+                <div className="flex items-center gap-2 pl-8">
+                  <span className="text-sm text-muted-foreground">Em</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="2"
+                    max="36"
+                    value={installments}
+                    onChange={(e) => setInstallments(e.target.value)}
+                    className="w-16 rounded-lg border border-border bg-surface-muted px-2 py-1.5 text-center text-sm outline-none"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    parcelas mensais, a partir da data escolhida abaixo
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

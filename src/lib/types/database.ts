@@ -55,6 +55,9 @@ export interface Transaction {
   occurred_at: string;
   is_shared: boolean;
   created_at: string;
+  installment_group_id: string | null;
+  installment_number: number | null;
+  installment_total: number | null;
 }
 
 export interface TransactionWithRelations extends Transaction {

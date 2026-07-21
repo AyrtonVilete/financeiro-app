@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "crypto";
+import { addMonths, format } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -64,6 +66,38 @@ export async function createTransaction(
 
   if (!amount || amount <= 0) {
     return { error: "Informe um valor maior que zero." };
+  }
+
+  const installmentTotal = mode === "quick" ? Number(formData.get("installments") ?? 0) : 0;
+
+  if (installmentTotal >= 2) {
+    const installmentGroupId = randomUUID();
+    const baseDate = new Date(`${occurredAt}T00:00:00`);
+
+    const rows = Array.from({ length: installmentTotal }, (_, i) => ({
+      user_id: user.id,
+      household_id: isShared ? householdId : null,
+      category_id: categoryId,
+      kind,
+      amount,
+      description,
+      occurred_at: format(addMonths(baseDate, i), "yyyy-MM-dd"),
+      is_shared: isShared && !!householdId,
+      installment_group_id: installmentGroupId,
+      installment_number: i + 1,
+      installment_total: installmentTotal,
+    }));
+
+    const { error: insertError } = await supabase.from("fin_transactions").insert(rows);
+
+    if (insertError) {
+      console.error("createTransaction installments insert error", insertError);
+      return { error: "Não foi possível salvar as parcelas. Tente novamente." };
+    }
+
+    revalidatePath("/");
+    revalidatePath("/transactions");
+    redirect("/transactions");
   }
 
   const { data: transaction, error: insertError } = await supabase

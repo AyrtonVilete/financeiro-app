@@ -1,4 +1,6 @@
 import { cache } from "react";
+import { headers } from "next/headers";
+import { unstable_cache, updateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Category,
@@ -8,20 +10,43 @@ import type {
   TransactionWithRelations,
 } from "@/lib/types/database";
 
-// cache() dedupe: layout + página chamam getCurrentUser() de forma independente;
-// sem isso cada chamada é um round-trip real ao servidor de Auth do Supabase.
-export const getCurrentUser = cache(async () => {
+export interface CurrentUser {
+  id: string;
+  email: string | null;
+}
+
+// O middleware já valida o JWT em todo request (proxy.ts) e repassa a
+// identidade via header. Evita um segundo round-trip de rede ao Supabase
+// Auth (auth.getUser()) a cada navegação. cache() ainda dedupe dentro do
+// mesmo request (layout + página chamam isso de forma independente).
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  const headerList = await headers();
+  const id = headerList.get("x-supabase-user-id");
+  if (id) {
+    return { id, email: headerList.get("x-supabase-user-email") || null };
+  }
+
+  // Fallback para rotas que não passam pelo matcher do middleware.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  return user;
+  return user ? { id: user.id, email: user.email ?? null } : null;
 });
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const supabase = await createClient();
-  const { data } = await supabase.from("fin_profiles").select("*").eq("id", userId).single();
-  return (data as Profile) ?? null;
+
+  const fetchProfile = unstable_cache(
+    async () => {
+      const { data } = await supabase.from("fin_profiles").select("*").eq("id", userId).single();
+      return (data as Profile) ?? null;
+    },
+    ["profile", userId],
+    { tags: [`profile-${userId}`], revalidate: 300 }
+  );
+
+  return fetchProfile();
 }
 
 export interface HouseholdInfo {
@@ -33,37 +58,66 @@ export interface HouseholdInfo {
 export async function getHousehold(userId: string): Promise<HouseholdInfo | null> {
   const supabase = await createClient();
 
-  const { data: membership } = await supabase
-    .from("fin_household_members")
-    .select("household_id")
-    .eq("user_id", userId)
-    .maybeSingle();
+  const fetchHousehold = unstable_cache(
+    async () => {
+      const { data: membership } = await supabase
+        .from("fin_household_members")
+        .select("household_id")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-  if (!membership) return null;
+      if (!membership) return null;
 
-  const { data: household } = await supabase
-    .from("fin_households")
-    .select("*")
-    .eq("id", membership.household_id)
-    .single();
+      const [{ data: household }, { data: members }] = await Promise.all([
+        supabase.from("fin_households").select("*").eq("id", membership.household_id).single(),
+        supabase
+          .from("fin_household_members")
+          .select("*, profile:fin_profiles(*)")
+          .eq("household_id", membership.household_id),
+      ]);
 
-  if (!household) return null;
+      if (!household) return null;
 
-  const { data: members } = await supabase
-    .from("fin_household_members")
-    .select("*, profile:fin_profiles(*)")
-    .eq("household_id", household.id);
+      const memberList = (members as (HouseholdMember & { profile: Profile | null })[]) ?? [];
+      const partner = memberList.find((m) => m.user_id !== userId)?.profile ?? null;
 
-  const memberList = (members as (HouseholdMember & { profile: Profile | null })[]) ?? [];
-  const partner = memberList.find((m) => m.user_id !== userId)?.profile ?? null;
+      return { household: household as Household, members: memberList, partner };
+    },
+    ["household", userId],
+    { tags: [`household-${userId}`], revalidate: 60 }
+  );
 
-  return { household: household as Household, members: memberList, partner };
+  return fetchHousehold();
 }
 
-export async function getCategories(): Promise<Category[]> {
+// Chame após qualquer mutação em fin_households/fin_household_members para que
+// todos os integrantes (não só quem disparou a ação) vejam o estado novo na
+// próxima navegação, em vez de esperar o cache de 60s expirar sozinho.
+export async function revalidateHouseholdForMembers(householdId: string) {
   const supabase = await createClient();
-  const { data } = await supabase.from("fin_categories").select("*").order("name");
-  return (data as Category[]) ?? [];
+  const { data: members } = await supabase
+    .from("fin_household_members")
+    .select("user_id")
+    .eq("household_id", householdId);
+
+  for (const member of members ?? []) {
+    updateTag(`household-${member.user_id}`);
+  }
+}
+
+export async function getCategories(userId: string): Promise<Category[]> {
+  const supabase = await createClient();
+
+  const fetchCategories = unstable_cache(
+    async () => {
+      const { data } = await supabase.from("fin_categories").select("*").order("name");
+      return (data as Category[]) ?? [];
+    },
+    ["categories", userId],
+    { tags: ["categories"], revalidate: 3600 }
+  );
+
+  return fetchCategories();
 }
 
 export interface TransactionFilters {

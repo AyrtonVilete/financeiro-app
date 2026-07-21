@@ -115,6 +115,7 @@ export default async function TransactionsPage({
                         {tx.category?.name}
                         {tx.is_shared ? " · Combinado" : ""}
                         {tx.items?.length ? ` · ${tx.items.length} itens` : ""}
+                        {tx.installment_total ? ` · Parcela ${tx.installment_number}/${tx.installment_total}` : ""}
                       </p>
                     </div>
                     <span

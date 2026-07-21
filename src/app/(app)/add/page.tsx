@@ -4,7 +4,7 @@ import { AddTransactionForm } from "@/components/add-transaction-form";
 export default async function AddPage() {
   const user = await getCurrentUser();
   const [categories, householdInfo] = await Promise.all([
-    getCategories(),
+    user ? getCategories(user.id) : [],
     user ? getHousehold(user.id) : null,
   ]);
 

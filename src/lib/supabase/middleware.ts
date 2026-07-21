@@ -43,5 +43,20 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return supabaseResponse;
+  // Repassa a identidade já validada para o Server Component via header, para
+  // que ele não precise chamar auth.getUser() de novo (round-trip duplicado
+  // ao Supabase Auth a cada navegação). Sempre remove primeiro para impedir
+  // que um client tente forjar o header.
+  const forwardedHeaders = new Headers(request.headers);
+  forwardedHeaders.delete("x-supabase-user-id");
+  forwardedHeaders.delete("x-supabase-user-email");
+  if (user) {
+    forwardedHeaders.set("x-supabase-user-id", user.id);
+    forwardedHeaders.set("x-supabase-user-email", user.email ?? "");
+  }
+
+  const response = NextResponse.next({ request: { headers: forwardedHeaders } });
+  supabaseResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+
+  return response;
 }

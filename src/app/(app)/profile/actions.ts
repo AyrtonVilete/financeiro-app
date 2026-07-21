@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { revalidateHouseholdForMembers } from "@/lib/data/queries";
 
 export interface ProfileActionState {
   error: string | null;
@@ -40,6 +41,7 @@ export async function createHousehold(
     return { error: "Espaço criado, mas houve um erro ao vincular você a ele." };
   }
 
+  updateTag(`household-${user.id}`);
   revalidatePath("/profile");
   return { error: null, success: "Espaço compartilhado criado!" };
 }
@@ -59,6 +61,20 @@ export async function joinHousehold(
     return { error: error.message.includes("inválido") ? "Código de convite inválido." : error.message };
   }
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    const { data: membership } = await supabase
+      .from("fin_household_members")
+      .select("household_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (membership) {
+      await revalidateHouseholdForMembers(membership.household_id);
+    }
+  }
+
   revalidatePath("/profile");
   return { error: null, success: "Você entrou no espaço compartilhado!" };
 }
@@ -69,6 +85,8 @@ export async function leaveHousehold(householdId: string) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return;
+
+  await revalidateHouseholdForMembers(householdId);
 
   await supabase
     .from("fin_household_members")
@@ -107,6 +125,7 @@ export async function updateRiskProfile(
     return { error: "Não foi possível salvar seu perfil." };
   }
 
+  updateTag(`profile-${user.id}`);
   revalidatePath("/investments");
   revalidatePath("/profile");
   return { error: null, success: "Perfil atualizado!" };

@@ -15,7 +15,18 @@ export default async function DashboardPage() {
   const [profile, household] = await Promise.all([getProfile(user.id), getHousehold(user.id)]);
 
   const { from, to } = getPeriodRange("this-month");
-  const monthTransactions = await getTransactions(user.id, { from, to, scope: "all" });
+  const sixMonthsAgo = startOfMonth(subMonths(new Date(), 5));
+
+  // Uma única busca cobrindo os últimos 6 meses; o mês atual e a tendência
+  // são derivados dela em memória, evitando um segundo round-trip ao banco.
+  const recentTransactions = await getTransactions(user.id, {
+    from: format(sixMonthsAgo, "yyyy-MM-dd"),
+    scope: "all",
+  });
+
+  const monthTransactions = recentTransactions.filter(
+    (t) => (!from || t.occurred_at >= from) && (!to || t.occurred_at <= to)
+  );
 
   const totalExpense = monthTransactions
     .filter((t) => t.kind === "expense")
@@ -48,12 +59,7 @@ export default async function DashboardPage() {
   const categoryData: CategoryTotal[] =
     restTotal > 0 ? [...topCategories, { name: "Outros", amount: restTotal, color: "#c3c2b7", isOther: true }] : topCategories;
 
-  const sixMonthsAgo = startOfMonth(subMonths(new Date(), 5));
-  const trendTransactions = await getTransactions(user.id, {
-    from: format(sixMonthsAgo, "yyyy-MM-dd"),
-    kind: "expense",
-    scope: "all",
-  });
+  const trendTransactions = recentTransactions.filter((t) => t.kind === "expense");
 
   const monthBuckets = new Map<string, number>();
   for (let i = 5; i >= 0; i--) {
