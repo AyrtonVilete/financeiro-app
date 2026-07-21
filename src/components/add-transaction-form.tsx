@@ -2,10 +2,21 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { createTransaction, type AddTransactionState } from "@/app/(app)/add/actions";
+import { createTransaction, updateTransaction, type AddTransactionState } from "@/app/(app)/add/actions";
 import type { Category } from "@/lib/types/database";
 
 const initialState: AddTransactionState = { error: null };
+
+export interface EditingTransaction {
+  id: string;
+  kind: "expense" | "income";
+  amount: number;
+  categoryId: string | null;
+  description: string | null;
+  occurredAt: string;
+  isShared: boolean;
+  items: { name: string; quantity: number; unit_price: number }[] | null;
+}
 
 function formatBRL(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -22,15 +33,25 @@ const emptyRow: ItemRow = { name: "", quantity: "1", unit_price: "" };
 export function AddTransactionForm({
   categories,
   household,
+  editing,
 }: {
   categories: Category[];
   household: { id: string; partnerName: string | null } | null;
+  editing?: EditingTransaction;
 }) {
-  const [state, formAction, pending] = useActionState(createTransaction, initialState);
-  const [kind, setKind] = useState<"expense" | "income">("expense");
-  const [mode, setMode] = useState<"quick" | "detailed">("quick");
-  const [items, setItems] = useState<ItemRow[]>([{ ...emptyRow }]);
-  const [isShared, setIsShared] = useState(false);
+  const [state, formAction, pending] = useActionState(editing ? updateTransaction : createTransaction, initialState);
+  const [kind, setKind] = useState<"expense" | "income">(editing?.kind ?? "expense");
+  const [mode, setMode] = useState<"quick" | "detailed">(editing?.items?.length ? "detailed" : "quick");
+  const [items, setItems] = useState<ItemRow[]>(
+    editing?.items?.length
+      ? editing.items.map((item) => ({
+          name: item.name,
+          quantity: String(item.quantity),
+          unit_price: String(item.unit_price),
+        }))
+      : [{ ...emptyRow }]
+  );
+  const [isShared, setIsShared] = useState(editing?.isShared ?? false);
   const [isInstallment, setIsInstallment] = useState(false);
   const [installments, setInstallments] = useState("2");
 
@@ -66,9 +87,10 @@ export function AddTransactionForm({
     <form action={formAction} className="flex flex-col gap-5 pb-6">
       <input type="hidden" name="mode" value={mode} />
       <input type="hidden" name="kind" value={kind} />
+      {editing && <input type="hidden" name="transactionId" value={editing.id} />}
       {mode === "detailed" && <input type="hidden" name="items" value={JSON.stringify(itemsPayload)} readOnly />}
       {household && <input type="hidden" name="householdId" value={household.id} />}
-      {kind === "expense" && mode === "quick" && isInstallment && (
+      {!editing && kind === "expense" && mode === "quick" && isInstallment && (
         <input type="hidden" name="installments" value={installments} />
       )}
 
@@ -127,12 +149,13 @@ export function AddTransactionForm({
               step="0.01"
               min="0"
               required
+              defaultValue={editing?.amount}
               placeholder="0,00"
               className="w-full bg-transparent text-lg outline-none"
             />
           </div>
 
-          {kind === "expense" && (
+          {!editing && kind === "expense" && (
             <div className="mt-2 flex flex-col gap-2 rounded-xl border border-border bg-surface p-3">
               <label className="flex items-center gap-3">
                 <input
@@ -239,6 +262,7 @@ export function AddTransactionForm({
           id="categoryId"
           name="categoryId"
           required
+          defaultValue={editing?.categoryId ?? undefined}
           className="rounded-xl border border-border bg-surface px-4 py-3 text-base outline-none"
         >
           {filteredCategories.map((cat) => (
@@ -257,6 +281,7 @@ export function AddTransactionForm({
           id="description"
           name="description"
           type="text"
+          defaultValue={editing?.description ?? undefined}
           placeholder="Ex: Mercado do mês"
           className="rounded-xl border border-border bg-surface px-4 py-3 text-base outline-none"
         />
@@ -270,8 +295,8 @@ export function AddTransactionForm({
           id="occurredAt"
           name="occurredAt"
           type="date"
-          defaultValue={today}
-          max={today}
+          defaultValue={editing?.occurredAt ?? today}
+          max={editing ? undefined : today}
           required
           className="rounded-xl border border-border bg-surface px-4 py-3 text-base outline-none"
         />
@@ -303,7 +328,7 @@ export function AddTransactionForm({
         disabled={pending}
         className="rounded-xl bg-primary px-4 py-3.5 text-base font-medium text-primary-foreground disabled:opacity-60"
       >
-        {pending ? "Salvando..." : "Salvar lançamento"}
+        {pending ? "Salvando..." : editing ? "Salvar alterações" : "Salvar lançamento"}
       </button>
     </form>
   );

@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { getCurrentUser, getHousehold, getTransactions } from "@/lib/data/queries";
 import { getPeriodRange, formatBRL, type Period } from "@/lib/utils/date-range";
 import { getCategoryIcon } from "@/lib/icon-map";
-import { deleteTransaction } from "./actions";
+import { deleteInstallmentSeries, deleteTransaction } from "./actions";
 
 function formatDateHeading(dateStr: string) {
   const date = new Date(`${dateStr}T00:00:00`);
@@ -96,44 +96,73 @@ export default async function TransactionsPage({
             <div className="flex flex-col gap-2">
               {txs.map((tx) => {
                 const Icon = getCategoryIcon(tx.category?.icon);
+                const hasRemainingInstallments =
+                  tx.user_id === user.id &&
+                  !!tx.installment_group_id &&
+                  tx.installment_number != null &&
+                  tx.installment_total != null &&
+                  tx.installment_number < tx.installment_total;
+
                 return (
                   <div
                     key={tx.id}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3"
+                    className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-3"
                   >
-                    <div
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                      style={{ backgroundColor: `${tx.category?.color ?? "#6b7280"}22` }}
-                    >
-                      <Icon size={18} color={tx.category?.color ?? "#6b7280"} />
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                        style={{ backgroundColor: `${tx.category?.color ?? "#6b7280"}22` }}
+                      >
+                        <Icon size={18} color={tx.category?.color ?? "#6b7280"} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {tx.description || tx.category?.name || "Sem categoria"}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {tx.category?.name}
+                          {tx.is_shared ? " · Combinado" : ""}
+                          {tx.items?.length ? ` · ${tx.items.length} itens` : ""}
+                          {tx.installment_total ? ` · Parcela ${tx.installment_number}/${tx.installment_total}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-sm font-semibold ${
+                          tx.kind === "income" ? "text-income" : "text-expense"
+                        }`}
+                      >
+                        {tx.kind === "income" ? "+" : "-"}
+                        {formatBRL(tx.amount)}
+                      </span>
+                      {tx.user_id === user.id && (
+                        <div className="flex shrink-0 items-center gap-2.5">
+                          <Link
+                            href={`/transactions/${tx.id}/edit`}
+                            aria-label="Editar lançamento"
+                            className="text-muted-foreground"
+                          >
+                            <Pencil size={16} />
+                          </Link>
+                          <form action={deleteTransaction.bind(null, tx.id)}>
+                            <button
+                              type="submit"
+                              aria-label="Excluir lançamento"
+                              className="text-muted-foreground"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </form>
+                        </div>
+                      )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {tx.description || tx.category?.name || "Sem categoria"}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {tx.category?.name}
-                        {tx.is_shared ? " · Combinado" : ""}
-                        {tx.items?.length ? ` · ${tx.items.length} itens` : ""}
-                        {tx.installment_total ? ` · Parcela ${tx.installment_number}/${tx.installment_total}` : ""}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        tx.kind === "income" ? "text-income" : "text-expense"
-                      }`}
-                    >
-                      {tx.kind === "income" ? "+" : "-"}
-                      {formatBRL(tx.amount)}
-                    </span>
-                    {tx.user_id === user.id && (
-                      <form action={deleteTransaction.bind(null, tx.id)}>
-                        <button
-                          type="submit"
-                          aria-label="Excluir lançamento"
-                          className="text-muted-foreground"
-                        >
-                          <Trash2 size={16} />
+
+                    {hasRemainingInstallments && (
+                      <form
+                        action={deleteInstallmentSeries.bind(null, tx.installment_group_id!, tx.installment_number!)}
+                        className="pl-[52px]"
+                      >
+                        <button type="submit" className="text-xs text-expense underline underline-offset-2">
+                          Cancelar parcelas restantes ({tx.installment_total! - tx.installment_number! + 1})
                         </button>
                       </form>
                     )}

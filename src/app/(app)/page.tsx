@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { format, startOfMonth, subMonths } from "date-fns";
+import { addMonths, format, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getCurrentUser, getHousehold, getProfile, getTransactions } from "@/lib/data/queries";
 import { getPeriodRange, formatBRL } from "@/lib/utils/date-range";
@@ -16,13 +16,15 @@ export default async function DashboardPage() {
 
   const { from, to } = getPeriodRange("this-month");
   const sixMonthsAgo = startOfMonth(subMonths(new Date(), 5));
+  const nextMonthStart = startOfMonth(addMonths(new Date(), 1));
 
-  // Uma única busca cobrindo os últimos 6 meses; o mês atual e a tendência
-  // são derivados dela em memória, evitando um segundo round-trip ao banco.
-  const recentTransactions = await getTransactions(user.id, {
-    from: format(sixMonthsAgo, "yyyy-MM-dd"),
-    scope: "all",
-  });
+  // Duas buscas em paralelo: os últimos 6 meses (mês atual + tendência são
+  // derivados dela em memória) e os lançamentos futuros já agendados
+  // (parcelas dos próximos meses).
+  const [recentTransactions, upcomingTransactions] = await Promise.all([
+    getTransactions(user.id, { from: format(sixMonthsAgo, "yyyy-MM-dd"), scope: "all" }),
+    getTransactions(user.id, { from: format(nextMonthStart, "yyyy-MM-dd"), scope: "all" }),
+  ]);
 
   const monthTransactions = recentTransactions.filter(
     (t) => (!from || t.occurred_at >= from) && (!to || t.occurred_at <= to)
@@ -77,6 +79,25 @@ export default async function DashboardPage() {
     amount,
   }));
 
+  const upcomingBuckets = new Map<string, { label: string; expense: number; count: number }>();
+  for (let i = 1; i <= 3; i++) {
+    const monthDate = addMonths(new Date(), i);
+    upcomingBuckets.set(format(monthDate, "yyyy-MM"), {
+      label: format(monthDate, "MMMM", { locale: ptBR }),
+      expense: 0,
+      count: 0,
+    });
+  }
+  for (const t of upcomingTransactions) {
+    if (t.kind !== "expense") continue;
+    const bucket = upcomingBuckets.get(t.occurred_at.slice(0, 7));
+    if (bucket) {
+      bucket.expense += t.amount;
+      bucket.count += 1;
+    }
+  }
+  const upcomingData = Array.from(upcomingBuckets.values()).filter((b) => b.count > 0);
+
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const monthLabel = format(new Date(), "MMMM 'de' yyyy", { locale: ptBR });
 
@@ -116,6 +137,27 @@ export default async function DashboardPage() {
         <h2 className="text-sm font-medium">Últimos 6 meses</h2>
         <TrendBarChart data={trendData} />
       </section>
+
+      {upcomingData.length > 0 && (
+        <section className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Próximos meses</h2>
+            <Link href="/transactions?period=all" className="text-xs text-primary">
+              Ver extrato
+            </Link>
+          </div>
+          <div className="flex flex-col gap-2">
+            {upcomingData.map((bucket) => (
+              <div key={bucket.label} className="flex items-center justify-between text-sm">
+                <span className="capitalize text-muted-foreground">{bucket.label}</span>
+                <span className="font-medium">
+                  {formatBRL(bucket.expense)} · {bucket.count} {bucket.count === 1 ? "lançamento" : "lançamentos"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <Link
         href="/add"

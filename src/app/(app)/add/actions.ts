@@ -140,3 +140,112 @@ export async function createTransaction(
   revalidatePath("/transactions");
   redirect("/transactions");
 }
+
+// Edita um lançamento existente (uma única linha — no caso de uma parcela,
+// só ajusta aquela parcela, sem mexer no resto da série).
+export async function updateTransaction(
+  _prevState: AddTransactionState,
+  formData: FormData
+): Promise<AddTransactionState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Sessão expirada. Faça login novamente." };
+  }
+
+  const transactionId = String(formData.get("transactionId") ?? "");
+  if (!transactionId) {
+    return { error: "Lançamento inválido." };
+  }
+
+  const kind = String(formData.get("kind") ?? "expense") as "expense" | "income";
+  const mode = String(formData.get("mode") ?? "quick");
+  const categoryId = String(formData.get("categoryId") ?? "") || null;
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const occurredAt = String(formData.get("occurredAt") ?? "") || new Date().toISOString().slice(0, 10);
+  const isShared = formData.get("isShared") === "on";
+  const householdId = String(formData.get("householdId") ?? "") || null;
+
+  let amount = 0;
+  let items: ItemInput[] = [];
+
+  if (mode === "detailed") {
+    const rawItems = String(formData.get("items") ?? "[]");
+    try {
+      const parsed = JSON.parse(rawItems) as ItemInput[];
+      items = parsed
+        .map((item) => ({
+          name: String(item.name ?? "").trim(),
+          quantity: Number(item.quantity) || 0,
+          unit_price: Number(item.unit_price) || 0,
+        }))
+        .filter((item) => item.name && item.quantity > 0);
+    } catch {
+      return { error: "Não foi possível ler os itens informados." };
+    }
+
+    if (items.length === 0) {
+      return { error: "Adicione pelo menos um item." };
+    }
+
+    amount = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  } else {
+    amount = Number(formData.get("amount") ?? 0);
+  }
+
+  if (!amount || amount <= 0) {
+    return { error: "Informe um valor maior que zero." };
+  }
+
+  const { error: updateError } = await supabase
+    .from("fin_transactions")
+    .update({
+      household_id: isShared ? householdId : null,
+      category_id: categoryId,
+      kind,
+      amount,
+      description,
+      occurred_at: occurredAt,
+      is_shared: isShared && !!householdId,
+    })
+    .eq("id", transactionId)
+    .eq("user_id", user.id);
+
+  if (updateError) {
+    console.error("updateTransaction error", updateError);
+    return { error: "Não foi possível salvar as alterações. Tente novamente." };
+  }
+
+  if (mode === "detailed") {
+    const { error: deleteItemsError } = await supabase
+      .from("fin_transaction_items")
+      .delete()
+      .eq("transaction_id", transactionId);
+
+    if (deleteItemsError) {
+      console.error("updateTransaction items delete error", deleteItemsError);
+      return { error: "Alterações salvas, mas houve um erro ao atualizar os itens." };
+    }
+
+    const { error: itemsError } = await supabase.from("fin_transaction_items").insert(
+      items.map((item) => ({
+        transaction_id: transactionId,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      }))
+    );
+
+    if (itemsError) {
+      console.error("updateTransaction items insert error", itemsError);
+      return { error: "Alterações salvas, mas houve um erro ao salvar os itens." };
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/transactions");
+  redirect("/transactions");
+}

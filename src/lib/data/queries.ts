@@ -129,6 +129,20 @@ export interface TransactionFilters {
   limit?: number;
 }
 
+export async function getTransactionById(
+  userId: string,
+  transactionId: string
+): Promise<TransactionWithRelations | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("fin_transactions")
+    .select("*, category:fin_categories(*), items:fin_transaction_items(*)")
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data as TransactionWithRelations) ?? null;
+}
+
 export async function getTransactions(
   userId: string,
   filters: TransactionFilters = {}
